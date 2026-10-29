@@ -518,6 +518,14 @@ and respects `ODOO_MCP_MAX_ATTACHMENT_UPLOAD_BYTES`. No new tool — this rides
 the same `preview_write` → `validate_write` → `execute_approved_write` gate as
 every other write.
 
+Attachment creation and updates accept the UI-readonly `res_model` / `res_id`
+pair when both are provided explicitly with a model name and positive integer
+record ID. This lets uploads belong to their target document immediately and
+lets an existing unlinked attachment be repaired without uploading it again.
+Other readonly checks and all approval gates still apply. Linking alone does
+not post a chatter message or send an email. See
+[Attachment writes](docs/attachment-writes.md) for examples and verification.
+
 Reviewed side-effect methods such as `sale.order.action_confirm` can be enabled
 one by one:
 

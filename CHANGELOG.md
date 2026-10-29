@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- `validate_write` accepts the UI-readonly `res_model` / `res_id` pair on
+  `ir.attachment` create and write, including batch creates. Both fields must
+  explicitly identify a target record and match known metadata types. Upload
+  tests use real Odoo readonly flags; trusted live metadata, approval gates,
+  other readonly checks, and Odoo access rules remain in effect.
 - `validate_write` accepts the UI-readonly `line_ids` and `move_type="entry"`
   fields when creating a draft `account.move` journal entry. New journal items
   require live child-model metadata and create-only commands; unrelated readonly
@@ -15,6 +20,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Disposable attachment Compose smoke test for Odoo 16–19 (XML-RPC) and Odoo 19
+  (JSON-2), including linked uploads, repair of existing unlinked attachments,
+  checksum preservation, batch creates, and HTTP downloads by another user.
 - Disposable journal-entry Compose smoke test for Odoo 16-19 over XML-RPC and
   Odoo 19 over JSON-2, covering single and batch MCP approval flows, live parent
   and child metadata, posting, atomic rollback on imbalance, independent
