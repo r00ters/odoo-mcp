@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- `validate_write` accepts the UI-readonly `res_model` / `res_id` pair on
+  `ir.attachment` create and write, including batch creates. Both fields must
+  explicitly identify a target record and match known metadata types. Upload
+  tests use real Odoo readonly flags; trusted live metadata, approval gates,
+  other readonly checks, and Odoo access rules remain in effect.
+
+### Added
+
+- Disposable attachment Compose smoke test for Odoo 16–19 (XML-RPC) and Odoo 19
+  (JSON-2), including linked uploads, repair of existing unlinked attachments,
+  checksum preservation, batch creates, and HTTP downloads by another user.
+
 ## [1.3.2] - 2026-08-19
 
 ### Changed

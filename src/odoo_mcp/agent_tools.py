@@ -17,6 +17,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
+from .tool_helpers import MODEL_NAME_RE
 from .field_ranking import (
     DEFAULT_MAX_QUERY_FIELDS,  # noqa: F401
     DEFAULT_MAX_RELEVANT_FIELDS,  # noqa: F401
@@ -281,6 +282,7 @@ def _metadata_issues_for_values(
     fields_metadata: dict[str, Any],
     *,
     label: str = "",
+    readonly_allowed_fields: frozenset[str] = frozenset(),
 ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     """Check one values dict against fields_get metadata."""
     issues: list[dict[str, str]] = []
@@ -300,7 +302,7 @@ def _metadata_issues_for_values(
             )
             continue
         field_type = str(meta.get("type", ""))
-        if meta.get("readonly"):
+        if meta.get("readonly") and field_name not in readonly_allowed_fields:
             issues.append(
                 {
                     "code": "readonly_field",
@@ -325,6 +327,59 @@ def _metadata_issues_for_values(
                 }
             )
     return issues, hints
+
+
+def _attachment_link_issues(
+    values: dict[str, Any],
+    fields_metadata: dict[str, Any],
+    *,
+    label: str,
+) -> tuple[list[dict[str, str]], frozenset[str]]:
+    """Allow the explicit ORM resource link, not arbitrary readonly fields.
+
+    Odoo marks these stored fields UI-readonly but accepts them in create/write.
+    Requiring the pair avoids inferring an existing attachment's model or taking
+    half of the link from context defaults. Odoo still enforces attachment and
+    target-record access at execution; validation does not grant those rights.
+    """
+    link_fields = frozenset({"res_model", "res_id"})
+    if not link_fields.intersection(values):
+        return [], frozenset()
+    prefix = f"{label}: " if label else ""
+    res_model, res_id = values.get("res_model"), values.get("res_id")
+    if not (
+        isinstance(res_model, str)
+        and MODEL_NAME_RE.fullmatch(res_model)
+        and type(res_id) is int
+        and res_id > 0
+    ):
+        return [
+            {
+                "code": "invalid_attachment_link",
+                "severity": "error",
+                "message": (
+                    f"{prefix}Pass res_model (a technical model name) and res_id "
+                    "(a positive integer record ID) together in values."
+                ),
+            }
+        ], frozenset()
+    for field, types in (
+        ("res_model", {"char"}),
+        ("res_id", {"many2one_reference", "integer"}),
+    ):
+        meta = fields_metadata.get(field)
+        if not isinstance(meta, dict) or meta.get("type") not in types:
+            return [
+                {
+                    "code": "invalid_attachment_link_metadata",
+                    "severity": "error",
+                    "message": (
+                        f"{prefix}{field} metadata must have type "
+                        f"{' or '.join(sorted(types))}."
+                    ),
+                }
+            ], frozenset()
+    return [], link_fields
 
 
 def validate_write_report(
@@ -353,21 +408,34 @@ def validate_write_report(
     field_hints: list[dict[str, str]] = []
     normalized_values = dict(values or {})
     if fields_metadata is not None:
-        if values_list is not None:
-            for index, entry in enumerate(values_list):
-                if not isinstance(entry, dict):
-                    continue  # preview already flagged the entry shape
-                entry_issues, entry_hints = _metadata_issues_for_values(
-                    entry, fields_metadata, label=f"values_list[{index}]"
+        entries = (
+            [
+                (f"values_list[{index}]", entry)
+                for index, entry in enumerate(values_list)
+            ]
+            if values_list is not None
+            else [("", normalized_values)]
+        )
+        for label, entry in entries:
+            if not isinstance(entry, dict):
+                continue  # preview already flagged the entry shape
+            readonly_allowed_fields: frozenset[str] = frozenset()
+            if model == "ir.attachment" and operation.strip().lower() in {
+                "create",
+                "write",
+            }:
+                link_issues, readonly_allowed_fields = _attachment_link_issues(
+                    entry, fields_metadata, label=label
                 )
-                issues.extend(entry_issues)
-                field_hints.extend(entry_hints)
-        else:
-            value_issues, value_hints = _metadata_issues_for_values(
-                normalized_values, fields_metadata
+                issues.extend(link_issues)
+            entry_issues, entry_hints = _metadata_issues_for_values(
+                entry,
+                fields_metadata,
+                label=label,
+                readonly_allowed_fields=readonly_allowed_fields,
             )
-            issues.extend(value_issues)
-            field_hints.extend(value_hints)
+            issues.extend(entry_issues)
+            field_hints.extend(entry_hints)
 
         if operation == "create" and values_list is None:
             for field_name, raw_meta in sorted(fields_metadata.items()):
