@@ -540,6 +540,8 @@ def validate_write_report(
         for label, entry in entries:
             if not isinstance(entry, dict):
                 continue  # preview already flagged the entry shape
+            # Exceptions are per entry and mutually exclusive by model/operation;
+            # never share them with another batch member or nested line values.
             readonly_allowed_fields: frozenset[str] = frozenset()
             if is_journal_entry_create(model, operation, entry, context):
                 journal_issues, readonly_allowed_fields = _journal_entry_create_issues(

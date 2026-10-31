@@ -332,6 +332,36 @@ async def journal_entry_smoke(
 
             move_ids = await create(values)
             move_id = move_ids[0]
+            # Exercise both readonly contracts in the same MCP server session,
+            # linking an attachment to the journal entry just created above.
+            attachment_args = {
+                "model": "ir.attachment",
+                "operation": "create",
+                "values": {
+                    "name": "Journal evidence",
+                    "res_model": "account.move",
+                    "res_id": move_id,
+                },
+            }
+            preview = await call("preview_write", attachment_args)
+            validation = await call("validate_write", attachment_args)
+            assert validation.get("success"), validation
+            assert validation["approval_status"]["stored"], validation
+            assert preview["approval"]["token"] == validation["approval"]["token"]
+            attachment = await call(
+                "execute_approved_write",
+                {"approval": validation["approval"], "confirm": True},
+            )
+            assert attachment.get("success"), attachment
+            attachment_ids = attachment["result"]
+            attachment_ids = (
+                attachment_ids if isinstance(attachment_ids, list) else [attachment_ids]
+            )
+            linked_attachment = client.execute_method(
+                "ir.attachment", "read", attachment_ids, fields=["res_model", "res_id"]
+            )[0]
+            assert linked_attachment["res_model"] == "account.move", linked_attachment
+            assert linked_attachment["res_id"] == move_id, linked_attachment
             items = lines(move_id)
             assert len(items) == 3, items
             by_name = {line["name"]: line for line in items}
@@ -429,6 +459,7 @@ async def journal_entry_smoke(
         "transport": f"stdio/{transport}",
         "create": "batch" if batch else "single",
         "live_parent_and_child_metadata": True,
+        "attachment_linked_to_created_move": True,
         "parent_readonly": {
             field: bool(parent_fields[field].get("readonly"))
             for field in ("line_ids", "move_type")
