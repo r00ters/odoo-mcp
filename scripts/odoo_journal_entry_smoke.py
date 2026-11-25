@@ -137,7 +137,8 @@ async def journal_entry_smoke(
             [0, 0, {"name": "Item A", "account_id": account_id, "debit": 10.0}],
             [0, 0, {
                 "name": "Item B", "account_id": account_id, "debit": 20.0,
-                "tax_tag_ids": [[6, 0, [tag_id]]], "tax_tag_invert": False,
+                "tax_tag_ids": [[6, 0, [tag_id]]],
+                **({"tax_tag_invert": False} if "tax_tag_invert" in line_fields else {}),
             }],
             [
                 0,
@@ -262,7 +263,8 @@ async def journal_entry_smoke(
                         assert item["credit"] == command[2].get("credit", 0), item
                         if "tax_tag_ids" in command[2]:
                             assert item["tax_tag_ids"] == command[2]["tax_tag_ids"][0][2], item
-                            assert item["tax_tag_invert"] is False, item
+                            if "tax_tag_invert" in command[2]:
+                                assert item["tax_tag_invert"] is False, item
                     await post(move_id)
                     assert {line["id"] for line in lines(move_id)} == {
                         line["id"] for line in actual
@@ -284,7 +286,7 @@ async def journal_entry_smoke(
                         "reconciled",
                         "amount_residual",
                         "tax_tag_ids",
-                        "tax_tag_invert",
+                        *(["tax_tag_invert"] if "tax_tag_invert" in line_fields else []),
                     ],
                 )
 
