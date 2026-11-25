@@ -56,6 +56,21 @@ async def journal_entry_smoke(
         api_key=api_key,
     )
     suffix = ("J" if transport == "json2" else "X") + ("B" if batch else "S")
+    # Fixture setup: even Settings administrators need the accounting group to
+    # create/read tax tags. The journal writes under test still go through MCP.
+    group_id = client.execute_method(
+        "ir.model.data", "search_read",
+        [["module", "=", "account"], ["name", "=", "group_account_user"]],
+        fields=["res_id"],
+    )[0]["res_id"]
+    user_ids = client.execute_method(
+        "res.users", "search", [["login", "=", ADMIN_LOGIN]],
+    )
+    user_fields = client.get_model_fields("res.users")
+    group_field = "group_ids" if "group_ids" in user_fields else "groups_id"
+    client.execute_method(
+        "res.users", "write", user_ids, {group_field: [[4, group_id, 0]]},
+    )
     company_id = client.execute_method("res.company", "search", [], limit=1)[0]
     account_fields = client.get_model_fields("account.account")
     company_values = (
