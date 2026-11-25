@@ -50,12 +50,31 @@ draft manual journal entry. It does not generally ignore readonly metadata:
   items is outside this contract.
 - Item fields are checked against live `account.move.line` metadata from the
   **same instance**. Unknown and readonly item fields are rejected, as are
-  explicit `move_id` values and nested one2many/many2many fields.
+  explicit `move_id` values and nested one2many/many2many fields, except for the
+  tax-tag assignment below.
 - Missing or failed child metadata prevents executable approval. Supplying
   client metadata or disabling live metadata does not authorize execution.
 - `context.default_line_ids` and disabling `check_move_validity` are rejected.
 - No commands are merged, reordered, or rewritten. Two commands using the same
   account remain distinct throughout preview, validation, and execution.
+
+### Tax tags on new items
+
+New items may include `"tax_tag_ids": [[6, 0, [23, 11]]]` to assign existing
+tags. Live child metadata from the same instance must explicitly mark the field
+writable (`readonly=false`), many2many, and related to `account.account.tag`.
+Exactly one `[6, 0, ids]` command is accepted, with positive integer IDs;
+booleans, strings and floats are rejected. `[[6, 0, []]]` explicitly assigns no
+tags; an empty command list or multiple commands is rejected. No IDs, duplicates,
+commands or lines are removed, sorted, merged or otherwise normalized in the
+approved payload. Creating, updating, deleting, linking/unlinking individual tags
+and clear commands are outside this contract; other nested relations stay blocked.
+`tax_tag_invert` undergoes the ordinary child-field metadata checks.
+
+This extension applies only to draft manual journal-entry creation, not invoice
+creation, existing moves or direct line writes. Tag existence, applicability,
+access rights, record rules and fiscal/accounting effects remain Odoo's
+responsibility at execution.
 
 This is metadata and command-shape validation, **not an Odoo transaction dry
 run**. Account/journal compatibility, permissions, company rules, currency
@@ -106,7 +125,8 @@ uv run --python 3.12 --with-editable . scripts/odoo_journal_entry_smoke.py \
 The script creates a uniquely named Compose project, initializes `base,account`,
 checks single and batch preview -> validation -> execution with live parent and
 child metadata, unchanged canonical payloads and tokens, distinct same-account
-items, and posting of every created move. An unbalanced second batch member
+items, tax-tag assignment/readback using a fixture tag, and posting of every
+created move. An unbalanced second batch member
 must roll back the entire batch and all its items. Reconciliation of one item
 must leave the other open; another entry in the batch also remains untouched.
 Negative field/command/context checks, missing-validation, confirmation and

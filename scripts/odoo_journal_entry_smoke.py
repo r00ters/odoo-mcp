@@ -101,6 +101,12 @@ async def journal_entry_smoke(
     )
     if isinstance(journal_id, list):
         journal_id = journal_id[0]
+    tag_id = client.execute_method(
+        "account.account.tag", "create",
+        {"name": f"+MCP{suffix}", "applicability": "taxes"},
+    )
+    if isinstance(tag_id, list):
+        tag_id = tag_id[0]
     parent_fields = client.get_model_fields("account.move")
     line_fields = client.get_model_fields("account.move.line")
     assert parent_fields["line_ids"]["relation"] == "account.move.line"
@@ -114,7 +120,10 @@ async def journal_entry_smoke(
         "date": date.today().isoformat(),
         "line_ids": [
             [0, 0, {"name": "Item A", "account_id": account_id, "debit": 10.0}],
-            [0, 0, {"name": "Item B", "account_id": account_id, "debit": 20.0}],
+            [0, 0, {
+                "name": "Item B", "account_id": account_id, "debit": 20.0,
+                "tax_tag_ids": [[6, 0, [tag_id]]], "tax_tag_invert": False,
+            }],
             [
                 0,
                 0,
@@ -236,6 +245,9 @@ async def journal_entry_smoke(
                         assert item["account_id"][0] == command[2]["account_id"], item
                         assert item["debit"] == command[2].get("debit", 0), item
                         assert item["credit"] == command[2].get("credit", 0), item
+                        if "tax_tag_ids" in command[2]:
+                            assert item["tax_tag_ids"] == command[2]["tax_tag_ids"][0][2], item
+                            assert item["tax_tag_invert"] is False, item
                     await post(move_id)
                     assert {line["id"] for line in lines(move_id)} == {
                         line["id"] for line in actual
@@ -256,6 +268,8 @@ async def journal_entry_smoke(
                         "credit",
                         "reconciled",
                         "amount_residual",
+                        "tax_tag_ids",
+                        "tax_tag_invert",
                     ],
                 )
 
@@ -342,6 +356,7 @@ async def journal_entry_smoke(
                 == account_id
             )
             assert by_name["Item A"]["debit"] == 10 and by_name["Item B"]["debit"] == 20
+            assert by_name["Item B"]["tax_tag_ids"] == [tag_id], by_name
             assert sum(line["debit"] - line["credit"] for line in items) == 0
             assert {line["id"] for line in lines(move_id)} == {
                 line["id"] for line in items
@@ -436,6 +451,7 @@ async def journal_entry_smoke(
         "reconcile_response_success": bool(reconciled.get("success")),
         "negative_checks_and_gates": True,
         "distinct_lines": True,
+        "tax_tags_preserved": True,
         "posted": True,
         "atomic_rollback": True,
         "independent_reconciliation": True,

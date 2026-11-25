@@ -357,8 +357,8 @@ def _journal_entry_create_issues(
     """Validate new journal items, without changing the approved command list.
 
     Odoo's readonly flag describes UI behavior, not ORM create permissions.
-    Only these two known fields have an exception. Existing-item commands and
-    nested relational mutations are deliberately outside this create contract.
+    Only these two known fields have a readonly exception. Nested relations are
+    excluded except for assigning existing tax tags on new journal items.
     Balance, currencies, defaults, ACLs and accounting rules remain Odoo's job.
     """
     issues: list[dict[str, str]] = []
@@ -439,7 +439,39 @@ def _journal_entry_create_issues(
         issues.extend(line_issues)
         for field_name in line_values:
             meta = line_fields_metadata.get(field_name)
-            if field_name == "move_id" or (
+            if field_name == "tax_tag_ids":
+                if not (
+                    isinstance(meta, dict)
+                    and meta.get("type") == "many2many"
+                    and meta.get("relation") == "account.account.tag"
+                    and meta.get("readonly") is False
+                ):
+                    reject(
+                        "invalid_journal_tax_tag_metadata",
+                        f"{path}.tax_tag_ids must be a writable many2many to account.account.tag.",
+                    )
+                tag_commands = line_values[field_name]
+                if not (
+                    isinstance(tag_commands, list)
+                    and len(tag_commands) == 1
+                    and isinstance(tag_commands[0], list)
+                    and len(tag_commands[0]) == 3
+                    and type(tag_commands[0][0]) is int
+                    and tag_commands[0][0] == 6
+                    and type(tag_commands[0][1]) is int
+                    and tag_commands[0][1] == 0
+                    and isinstance(tag_commands[0][2], list)
+                    and all(
+                        type(tag_id) is int and tag_id > 0
+                        for tag_id in tag_commands[0][2]
+                    )
+                ):
+                    reject(
+                        "invalid_journal_tax_tag_command",
+                        f"{path}.tax_tag_ids must contain exactly one [6, 0, ids] command "
+                        "with positive integer IDs (an empty ID list is allowed).",
+                    )
+            elif field_name == "move_id" or (
                 isinstance(meta, dict) and meta.get("type") in {"one2many", "many2many"}
             ):
                 reject(

@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Draft journal-entry creates accept `tax_tag_ids` on new items via exactly one
+  `[6, 0, ids]` command, with positive integer IDs (or an explicit empty ID list)
+  and writable live many2many metadata relating to `account.account.tag`.
+  Other nested relations remain blocked; payloads and approval gates are unchanged.
 - `validate_write` accepts the UI-readonly `res_model` / `res_id` pair on
   `ir.attachment` create and write, including batch creates. Both fields must
   explicitly identify a target record and match known metadata types. Upload

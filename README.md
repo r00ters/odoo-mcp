@@ -504,6 +504,8 @@ Journal entries use the same workflow: `account.move` creation accepts
 marks these fields UI-readonly. Each item is checked against live
 `account.move.line` metadata; separate commands on the same account remain
 separate items. Odoo still checks balance and accounting constraints at execution.
+New items may assign existing `tax_tag_ids` with one `[6, 0, ids]` command,
+validated against writable live metadata; other nested relations remain blocked.
 See [Journal entry writes](docs/journal-entry-writes.md) for the payload,
 supported command shapes, posting, and a disposable integration test.
 
