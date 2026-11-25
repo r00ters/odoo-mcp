@@ -70,6 +70,8 @@ commands or lines are removed, sorted, merged or otherwise normalized in the
 approved payload. Creating, updating, deleting, linking/unlinking individual tags
 and clear commands are outside this contract; other nested relations stay blocked.
 `tax_tag_invert` undergoes the ordinary child-field metadata checks.
+Odoo 19 does not expose that field in the tested image; including it is rejected,
+not silently removed.
 
 This extension applies only to draft manual journal-entry creation, not invoice
 creation, existing moves or direct line writes. Tag existence, applicability,
@@ -147,6 +149,11 @@ uv run --python 3.12 --with-editable . scripts/odoo_compose_smoke.py \
 Check its fixed Compose project names and ports for collisions before running.
 
 ### Verified compatibility
+
+The tax-tag extension was verified on 2026-11-25: single and batch creates
+passed on Odoo 16–19 XML-RPC and Odoo 19 JSON-2, including tax-tag readback before
+and after posting. The general smoke passed on all four versions. These are
+disposable Community-image checks, not validation of a production fiscal report.
 
 Verified on 2026-10-05 with the official disposable Odoo Community Docker images:
 
