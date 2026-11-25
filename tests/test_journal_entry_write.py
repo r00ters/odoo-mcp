@@ -30,6 +30,10 @@ LINE_FIELDS = {
     "amount_residual": {"type": "monetary", "readonly": True},
     "move_id": {"type": "many2one", "readonly": False},
     "tax_ids": {"type": "many2many", "readonly": False},
+    "tax_tag_ids": {
+        "type": "many2many", "relation": "account.account.tag", "readonly": False,
+    },
+    "tax_tag_invert": {"type": "boolean", "readonly": False},
 }
 
 
@@ -42,7 +46,10 @@ def values():
         "line_ids": [
             [0, 0, {"name": "Tax item A", "account_id": 11, "debit": 10.0}],
             [0, 0, {"name": "Tax item B", "account_id": 11, "debit": 20.0}],
-            [0, 0, {"name": "Counterpart", "account_id": 12, "credit": 30.0}],
+            [0, 0, {
+                "name": "Counterpart", "account_id": 12, "credit": 30.0,
+                "tax_tag_ids": [[6, 0, [23, 11, 23]]], "tax_tag_invert": False,
+            }],
         ],
     }
 
@@ -259,6 +266,79 @@ def test_batch_checks_every_journal_entry_and_reports_line_path(values):
     assert any("values_list[1]: line_ids[1]" in i["message"] for i in report["issues"])
 
 
+def test_tax_tag_batch_preserves_large_entries_and_reports_exact_paths(values):
+    entries = []
+    for count in (9, 11):
+        entry = deepcopy(values)
+        entry["line_ids"] = (
+            [deepcopy(values["line_ids"][0]) for _ in range(count - 1)]
+            + [deepcopy(values["line_ids"][-1])]
+        )
+        entries.append(entry)
+    original = deepcopy(entries)
+    report = server.validate_write(
+        make_context(RecordingClient()), "account.move", "create", values_list=entries,
+    )
+    assert report["approval_status"]["stored"]
+    assert report["approval"]["values_list"] == original
+
+    for entry in entries:
+        entry["line_ids"][-1][2]["tax_tag_ids"] = [[6, 0, [True]]]
+    ctx = make_context(RecordingClient())
+    report = server.validate_write(ctx, "account.move", "create", values_list=entries)
+    assert not report["success"]
+    assert not report["approval_status"]["stored"]
+    messages = [i["message"] for i in report["issues"]]
+    for index, line in ((0, 8), (1, 10)):
+        assert any(f"values_list[{index}]: line_ids[{line}].tax_tag_ids" in m for m in messages)
+
+
+@pytest.mark.parametrize(
+    "commands",
+    [
+        [], [6, 0, [11]], [[6, 0]], [[6, False, [11]]], [[6.0, 0, [11]]],
+        [[6, 0, [0]]], [[6, 0, [-1]]], [[6, 0, [True]]],
+        [[6, 0, [11.0]]], [[6, 0, ["11"]]], [[6, 0, 11]],
+        [[6, 0, [11]], [6, 0, [23]]],
+        [[0, 0, {"name": "new"}]], [[1, 11, {"name": "changed"}]],
+        [[2, 11, 0]], [[3, 11, 0]], [[4, 11, 0]], [[5, 0, 0]],
+    ],
+)
+def test_tax_tags_only_accept_one_set_command(values, commands):
+    values["line_ids"][-1][2]["tax_tag_ids"] = commands
+    report = validate(values)
+    assert not report["success"]
+    assert "invalid_journal_tax_tag_command" in {i["code"] for i in report["issues"]}
+
+
+def test_empty_tax_tag_assignment_is_explicit_and_unchanged(values):
+    values["line_ids"][-1][2]["tax_tag_ids"] = [[6, 0, []]]
+    report = validate(values)
+    assert report["success"]
+    assert report["approval"]["values"] == values
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        None,
+        {"type": "many2many", "relation": "account.account.tag", "readonly": True},
+        {"type": "many2many", "relation": "account.account.tag"},
+        {"type": "one2many", "relation": "account.account.tag", "readonly": False},
+        {"type": "many2many", "relation": "custom.tag", "readonly": False},
+    ],
+)
+def test_tax_tags_require_known_writable_live_metadata(values, metadata):
+    client = RecordingClient()
+    client.line_fields["tax_tag_ids"] = metadata
+    ctx = make_context(client)
+    report = server.validate_write(ctx, "account.move", "create", values=values)
+    assert not report["success"]
+    assert not report["approval_status"]["stored"]
+    assert "invalid_journal_tax_tag_metadata" in {i["code"] for i in report["issues"]}
+    assert client.calls == []
+
+
 @pytest.mark.parametrize("metadata", [None, {}, {"error": "access denied"}])
 def test_missing_live_child_metadata_never_stores_approval(values, metadata):
     client = RecordingClient()
@@ -331,7 +411,7 @@ def test_existing_execution_gates_are_preserved(monkeypatch, values, gate):
     assert report["approval_status"]["stored"] is True
     approval = deepcopy(report["approval"])
     if gate == "tamper":
-        approval["values"]["line_ids"][0][2]["debit"] = 999
+        approval["values"]["line_ids"][-1][2]["tax_tag_ids"][0][2].append(99)
     elif gate == "expired":
         ctx.request_context.lifespan_context.write_approvals[approval["token"]][
             "expires_at"
